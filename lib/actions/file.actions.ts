@@ -96,28 +96,39 @@ export const getFiles = async ({
   searchText = "",
   sort = "$createdAt-desc",
   limit,
-}: GetFilesProps) => {
+  ownerId, // optional, pass from frontend
+}: GetFilesProps & { ownerId?: string }) => {
   const { databases } = await createAdminClient();
 
   try {
-    const currentUser = await getCurrentUser();
+    const queries = [];
 
-    if (!currentUser) throw new Error("User not found");
+    if (ownerId) {
+      queries.push(Query.equal("owner", [ownerId]));
+    }
 
-    const queries = createQueries(currentUser, types, searchText, sort, limit);
+    if (types.length > 0) queries.push(Query.equal("type", types));
+    if (searchText) queries.push(Query.contains("name", searchText));
+    if (limit) queries.push(Query.limit(limit));
+
+    if (sort) {
+      const [sortBy, orderBy] = sort.split("-");
+      queries.push(orderBy === "asc" ? Query.orderAsc(sortBy) : Query.orderDesc(sortBy));
+    }
 
     const files = await databases.listDocuments(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
-      queries,
+      queries.length ? queries : undefined
     );
 
-    console.log({ files });
     return parseStringify(files);
   } catch (error) {
-    handleError(error, "Failed to get files");
+    console.log(error, "Failed to get files");
+    throw error;
   }
 };
+
 
 export const renameFile = async ({
   fileId,
@@ -195,16 +206,16 @@ export const deleteFile = async ({
 };
 
 // ============================== TOTAL FILE SPACE USED
-export async function getTotalSpaceUsed() {
+export async function getTotalSpaceUsed(ownerId?: string) {
   try {
-    const { databases } = await createSessionClient();
-    const currentUser = await getCurrentUser();
-    if (!currentUser) throw new Error("User is not authenticated.");
+    const { databases } = await createAdminClient();
+
+    const filters = ownerId ? [Query.equal("owner", [ownerId])] : [];
 
     const files = await databases.listDocuments(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
-      [Query.equal("owner", [currentUser.$id])],
+      filters
     );
 
     const totalSpace = {
@@ -214,7 +225,7 @@ export async function getTotalSpaceUsed() {
       audio: { size: 0, latestDate: "" },
       other: { size: 0, latestDate: "" },
       used: 0,
-      all: 2 * 1024 * 1024 * 1024 /* 2GB available bucket storage */,
+      all: 2 * 1024 * 1024 * 1024, // 2GB
     };
 
     files.documents.forEach((file) => {
@@ -222,16 +233,15 @@ export async function getTotalSpaceUsed() {
       totalSpace[fileType].size += file.size;
       totalSpace.used += file.size;
 
-      if (
-        !totalSpace[fileType].latestDate ||
-        new Date(file.$updatedAt) > new Date(totalSpace[fileType].latestDate)
-      ) {
+      if (!totalSpace[fileType].latestDate || new Date(file.$updatedAt) > new Date(totalSpace[fileType].latestDate)) {
         totalSpace[fileType].latestDate = file.$updatedAt;
       }
     });
 
     return parseStringify(totalSpace);
   } catch (error) {
-    handleError(error, "Error calculating total space used:, ");
+    console.log(error, "Error calculating total space used");
+    throw error;
   }
 }
+
