@@ -34,8 +34,7 @@ A modern, secure, and user-friendly cloud storage platform designed to help you 
   <li><b>NEXT_APPWRITE_KEY</b> — This is your Appwrite API key used to authorize backend requests (keep it secret).</li>
 
     
-    <li>Start the project locally: "npm run dev"</li>
-    
+    Start the project locally: "npm run dev"    
 </ul>
 
 
