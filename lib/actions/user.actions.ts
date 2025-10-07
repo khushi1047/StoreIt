@@ -95,26 +95,23 @@ export const verifySecret = async ({
 
 export const getCurrentUser = async () => {
   try {
-    const { account, databases } = await createSessionClient();
+    const { databases, account } = await createSessionClient();
 
-    // Uses the logged-in user's session
     const result = await account.get();
 
     const user = await databases.listDocuments(
       appwriteConfig.databaseId,
       appwriteConfig.usersCollectionId,
-      [Query.equal("accountId", result.$id)]
+      [Query.equal("accountId", result.$id)],
     );
 
     if (user.total <= 0) return null;
 
     return parseStringify(user.documents[0]);
   } catch (error) {
-    console.log("getCurrentUser error:", error);
-    return null; // return null if no session
+    console.log(error);
   }
 };
-
 
 export const signOutUser = async () => {
   const { account } = await createSessionClient();

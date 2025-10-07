@@ -40,7 +40,6 @@ export const uploadFile = async ({
       accountId,
       users: [],
       bucketFileId: bucketFile.$id,
-      //  bucketField: appwriteConfig.bucketId,
     };
 
     const newFile = await databases
@@ -96,39 +95,28 @@ export const getFiles = async ({
   searchText = "",
   sort = "$createdAt-desc",
   limit,
-  ownerId, // optional, pass from frontend
-}: GetFilesProps & { ownerId?: string }) => {
+}: GetFilesProps) => {
   const { databases } = await createAdminClient();
 
   try {
-    const queries = [];
+    const currentUser = await getCurrentUser();
 
-    if (ownerId) {
-      queries.push(Query.equal("owner", [ownerId]));
-    }
+    if (!currentUser) throw new Error("User not found");
 
-    if (types.length > 0) queries.push(Query.equal("type", types));
-    if (searchText) queries.push(Query.contains("name", searchText));
-    if (limit) queries.push(Query.limit(limit));
-
-    if (sort) {
-      const [sortBy, orderBy] = sort.split("-");
-      queries.push(orderBy === "asc" ? Query.orderAsc(sortBy) : Query.orderDesc(sortBy));
-    }
+    const queries = createQueries(currentUser, types, searchText, sort, limit);
 
     const files = await databases.listDocuments(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
-      queries.length ? queries : undefined
+      queries,
     );
 
+    console.log({ files });
     return parseStringify(files);
   } catch (error) {
-    console.log(error, "Failed to get files");
-    throw error;
+    handleError(error, "Failed to get files");
   }
 };
-
 
 export const renameFile = async ({
   fileId,
@@ -206,16 +194,16 @@ export const deleteFile = async ({
 };
 
 // ============================== TOTAL FILE SPACE USED
-export async function getTotalSpaceUsed(ownerId?: string) {
+export async function getTotalSpaceUsed() {
   try {
-    const { databases } = await createAdminClient();
-
-    const filters = ownerId ? [Query.equal("owner", [ownerId])] : [];
+    const { databases } = await createSessionClient();
+    const currentUser = await getCurrentUser();
+    if (!currentUser) throw new Error("User is not authenticated.");
 
     const files = await databases.listDocuments(
       appwriteConfig.databaseId,
       appwriteConfig.filesCollectionId,
-      filters
+      [Query.equal("owner", [currentUser.$id])],
     );
 
     const totalSpace = {
@@ -225,7 +213,7 @@ export async function getTotalSpaceUsed(ownerId?: string) {
       audio: { size: 0, latestDate: "" },
       other: { size: 0, latestDate: "" },
       used: 0,
-      all: 2 * 1024 * 1024 * 1024, // 2GB
+      all: 2 * 1024 * 1024 * 1024 /* 2GB available bucket storage */,
     };
 
     files.documents.forEach((file) => {
@@ -233,15 +221,16 @@ export async function getTotalSpaceUsed(ownerId?: string) {
       totalSpace[fileType].size += file.size;
       totalSpace.used += file.size;
 
-      if (!totalSpace[fileType].latestDate || new Date(file.$updatedAt) > new Date(totalSpace[fileType].latestDate)) {
+      if (
+        !totalSpace[fileType].latestDate ||
+        new Date(file.$updatedAt) > new Date(totalSpace[fileType].latestDate)
+      ) {
         totalSpace[fileType].latestDate = file.$updatedAt;
       }
     });
 
     return parseStringify(totalSpace);
   } catch (error) {
-    console.log(error, "Error calculating total space used");
-    throw error;
+    handleError(error, "Error calculating total space used:, ");
   }
 }
-
